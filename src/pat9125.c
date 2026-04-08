@@ -8,7 +8,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -93,6 +92,16 @@ static inline int32_t _sign_extend(uint32_t value, uint8_t index) {
     return (int32_t)(value << shift) >> shift;
 }
 
+/* =========================================
+   蓄積フィルター用変数の追加（ここから）
+   ========================================= */
+static int pat912x_acc_x = 0;
+static int pat912x_acc_y = 0;
+static int64_t pat912x_acc_last_time = 0;
+/* =========================================
+   蓄積フィルター用変数の追加（ここまで）
+   ========================================= */
+
 static void pat912x_motion_work_handler(struct k_work *work)
 {
 	struct pat912x_data *data = CONTAINER_OF(
@@ -138,6 +147,31 @@ static void pat912x_motion_work_handler(struct k_work *work)
 	}
 
 	LOG_DBG("x=%4d y=%4d", x, y);
+
+	/* =========================================
+	   蓄積フィルター判定ロジックの追加（ここから）
+	   ========================================= */
+	{
+		int64_t now = k_uptime_get();
+		if (now - pat912x_acc_last_time > 50) {
+			pat912x_acc_x = 0;
+			pat912x_acc_y = 0;
+		}
+		pat912x_acc_last_time = now;
+		pat912x_acc_x += x;
+		pat912x_acc_y += y;
+		if (abs(pat912x_acc_x) + abs(pat912x_acc_y) <= 7) {
+			k_work_submit(&data->motion_work);
+			return;
+		}
+		x = pat912x_acc_x;
+		y = pat912x_acc_y;
+		pat912x_acc_x = 0;
+		pat912x_acc_y = 0;
+	}
+	/* =========================================
+	   蓄積フィルター判定ロジックの追加（ここまで）
+	   ========================================= */
 
 	if (cfg->axis_x >= 0) {
 		bool sync = cfg->axis_y < 0;
@@ -374,4 +408,4 @@ static int pat912x_pm_action(const struct device *dev,
 
 DT_INST_FOREACH_STATUS_OKAY(PAT912X_INIT)
 
-#endif // DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
+#endif // DT_HAS_COMP
